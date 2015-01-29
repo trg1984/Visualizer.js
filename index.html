@@ -1,0 +1,171 @@
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Visualizer.js test</title>
+        <link rel="stylesheet" href="style/page.css" />
+        <script src="jquery-1.10.2.js"></script>
+        <script src="Visualizer.js"></script>
+        <script>
+		
+			function detectBrowserSize() {
+				var myWidth = 0, myHeight = 0;
+				if (typeof (window.innerWidth) == 'number') {
+					//Non-IE
+					myWidth = window.innerWidth;
+					myHeight = window.innerHeight;
+				} else if (document.documentElement && (document.documentElement.clientWidth ||   document.documentElement.clientHeight)) {
+					//IE 6+ in 'standards compliant mode'
+					myWidth = document.documentElement.clientWidth;
+					myHeight = document.documentElement.clientHeight;
+				} else if (document.body && (document.body.clientWidth || document.body.clientHeight)) {
+					//IE 4 compatible
+					myWidth = document.body.clientWidth;
+					myHeight = document.body.clientHeight;
+				}
+				return {
+					width: myWidth,
+					height: myHeight
+				};
+			}
+			
+            $(document).ready(
+                function(e) {
+					var item = $('.visualizer').length;
+					var dim = detectBrowserSize();
+					var place = $('#visualizer').append('<div id="viz-' + item + '"></div>').find('#viz-' + item);
+					var viz = new Visualizer(
+						place,
+						{
+							width: dim.width,
+							height: dim.height,
+							mode: 'html',
+							allowZoom: true
+						}
+					);
+					
+					 window.onresize = function() {
+						var conf = viz.config;
+						var dim = detectBrowserSize();
+						conf.width = dim.width;
+						conf.height = dim.height;
+					
+						place.empty();
+						viz = new Visualizer(
+							place,
+							conf
+						);
+						viz.draw(false);
+					};
+					
+					var closestP = null;
+					var snapDist = 8;
+					var classArray = [ 'arrow-down', 'auction', 'balloon', 'construction', 'dashboard', 'feed', 'floppy-disk', 'gears'];
+					var mouse = { x: -1, y: -1 };
+					$(document).mousemove(function(event) {
+						mouse.x = event.pageX;
+						mouse.y = event.pageY;
+						
+						if (viz.config.mode === 'canvas') {
+							closestP = viz.getClosestPoint(mouse.x, mouse.y);
+							viz.draw();
+						}
+					});
+					
+					function __keyHandler(e) {
+					
+					
+						//TODO check that focus is not in a textarea or text input before applying key events.
+						switch (e.keyCode) {
+							case 32: {
+								var distToClosest = Number.MAX_VALUE;
+								var invMouseCoords = viz.inverseScreenCoordinates(mouse.x, mouse.y, Math.random() * 5 + 0.4);
+								if (closestP !== null) {
+									var cp = viz.fitToBoundingBox(closestP);
+									distToClosest = Math.sqrt(Math.pow(cp.x - mouse.x, 2) + Math.pow(cp.y - mouse.y, 2));
+									
+								}
+								
+								if (distToClosest >= snapDist || viz.config.mode === 'html') {
+								
+									var choice = classArray[Math.round(Math.random() * (classArray.length - 1))];
+									invMouseCoords.content = $('<div class="' + choice + '"></div>')
+									viz.addPoints( invMouseCoords );
+									closestP = viz.config.points[viz.config.points.length - 1];
+									distToClosest = 0;
+								}
+								else {
+								
+									// Edit element (if this event is meaningful).
+								}
+							} break;
+							default: /*console.log('unused key: ', e.keyCode);*/ break;
+							
+						}
+						
+						viz.draw();
+					}
+					
+					$(document).on('keyup', __keyHandler);
+					
+					viz.draw(false);
+                }
+            );
+            
+        </script>
+        <style>
+			html, body {
+				width: 100%;
+				height: 100%;
+				margin: 0;
+				padding: 0;
+				overflow: hidden;
+			}
+			
+			.visualizer { }
+			
+			.visualizer .point > div {
+				min-width: 32px;
+				min-height: 32px;
+				background-size: cover;
+				display: inline-block;
+				
+				border-radius: 50%;
+				transition: background-color 0.5s ease-in;
+			}
+			
+			.visualizer .point .arrow-down { background-image: url('images/arrow-down.png'); }
+			.visualizer .point .auction { background-image: url('images/auction.png'); }
+			.visualizer .point .balloon { background-image: url('images/balloon.png'); }
+			.visualizer .point .construction { background-image: url('images/construction.png'); }
+			.visualizer .point .dashboard { background-image: url('images/dashboard.png'); }
+			.visualizer .point .feed { background-image: url('images/feed.png'); }
+			.visualizer .point .floppy-disk { background-image: url('images/floppy-disk.png'); }
+			.visualizer .point .gears { background-image: url('images/gears.png'); }
+			
+			
+			#help {
+				width: 15em;
+				position:fixed;
+				z-index: 10000;
+				top: 8;
+				right: 8;
+				background-color: rgba(200, 200, 230, 0.8);
+				font-size: 5pt;
+				border: 1px solid gray;
+				padding: 0.5em;
+				font-family: Lato, Arial, sans;
+				line-height: 1.5em;
+			}
+			
+			
+        </style>
+    </head>
+    <body oncontextmenu="return false;">
+		<div id="help">
+		Space: New point<br/>
+		Mouse drag: Drag viewport<br/>
+		Mouse wheel: Scale viewport<br/>
+		</div>
+		<div id="visualizer"></div>
+    </body>
+</html>
