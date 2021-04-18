@@ -12,9 +12,10 @@ function Visualizer(place, config, callback) {
 		height: 300,
 		showInstructions: false,
 		allowKeyboardControls: false,
-		movablePoints: false,
 		mode: 'html',
-		allowZoom: true
+		allowZoom: true,
+		propagateMouseEvents: true,
+		scaleFactor: 1
     };
     
     this.context = null;
@@ -25,62 +26,79 @@ function Visualizer(place, config, callback) {
 Visualizer.prototype.initialize = function(place, config, callback) {
 	
 	// Copy the configuration to the main object.
-    for (var item in config) this.config[item] = config[item];
+    if (typeof(config) !== 'undefined') for (var item in config) this.config[item] = config[item];
 	
     var self = this;
-    this.place = place;
+    if (typeof(place) !== 'undefined') this.place = place;
     
-	if (typeof(config['boundingBox']) === 'undefined') this.autoFitBoundingBox();
+	if (typeof(this.config['boundingBox']) === 'undefined') this.autoFitBoundingBox();
 	
 	if (this.config.allowKeyboardControls) $(document).keydown( function(e) { self.keyHandler(e) } )
 	
 	var isDragging = false;
-	var mx, my;
+	var mx, my, mx1, my1;
 	var self = this;
 	this.place
 		.empty()
+		.mousemove(function(e) {
+			mx1 = e.clientX;
+			my1 = e.clientY;
+		})
 		.mousedown(function(e) {
 			mx = e.clientX;
 			my = e.clientY;
-			self.place.on('mousemove.drag',
-				function(e1) {
-					e.stopPropagation();
-					
-					isDragging = true;
-					
-					var dx = (mx - e1.clientX) / self.place.width();
-					var dy = (e1.clientY - my) / self.place.height();
-					mx = e1.clientX;
-					my = e1.clientY;
-					
-					//console.log(e, e1);
+			if (e.button === 2) {
+				self.place.on('mousemove.drag',
+					function(e1) {
+						if (!self.config.propagateMouseEvents) e.stopPropagation();
+						
+						isDragging = true;
+						
+						var dx = (mx - e1.clientX) / self.place.width();
+						var dy = (e1.clientY - my) / self.place.height();
+						mx = e1.clientX;
+						my = e1.clientY;
+						
+						//console.log(e, e1);
+						self.moveBoundingBox(dx, dy, 0);
+						self.draw();
+					}
+				);
+			}
+		})
+		.mouseup(function(e) {
+			if (!self.config.propagateMouseEvents) e.stopPropagation();
+			
+			if (e.button === 2) {
+				var wasDragging = isDragging;
+				isDragging = false;
+				self.place.unbind("mousemove.drag");
+				if (wasDragging) {
+					var dx = (mx - e.clientX) / self.place.width();
+					var dy = (e.clientY - my) / self.place.height();
 					self.moveBoundingBox(dx, dy, 0);
 					self.draw();
 				}
-			);
-		})
-		.mouseup(function(e) {
-			e.stopPropagation();
-					
-			var wasDragging = isDragging;
-			isDragging = false;
-			self.place.unbind("mousemove.drag");
-			if (wasDragging) {
-				var dx = (mx - e.clientX) / self.place.width();
-				var dy = (e.clientY - my) / self.place.height();
-				self.moveBoundingBox(dx, dy, 0);
-				self.draw();
 			}
 		})
 		.on('mousewheel DOMMouseScroll',
 			function(e) {
 				if (self.config.allowZoom) {
 					e.preventDefault();
-					e.stopPropagation();
+					if (!self.config.propagateMouseEvents) e.stopPropagation();
 					var delta = typeof(e.originalEvent.wheelDelta) === 'undefined' ? e.originalEvent.detail / 3 : -e.originalEvent.wheelDelta / 120;
 					
-					var dz = Math.pow(5 / 4, delta) - 1;
-					self.moveBoundingBox(0, 0, dz);
+					var cx = self.place.width() / 2;
+					var cy = self.place.height() / 2;
+					
+					var dx = (cx - mx1) / self.place.width();
+					var dy = (my1 - cy) / self.place.height();
+					
+					//var dz = (Math.pow(5 / 4, delta) - 1) / 2;
+					var dz = Math.pow(9 / 8, delta) - 1;
+					
+					self.moveBoundingBox(-dx, -dy, dz);
+					self.moveBoundingBox(dx, dy, 0);
 					self.draw();
 				}
 			}
@@ -95,6 +113,7 @@ Visualizer.prototype.initialize = function(place, config, callback) {
 			.css('width', this.config.width + "px")
 			.css('height', this.config.height + "px");
 		this.context = null;
+		this.updatePoints();
 	}
 	
 	if (this.config.showInstructions === true)
@@ -112,14 +131,31 @@ Visualizer.prototype.setPoints = function(newPoints) {
 	this.updatePoints();
 }
 
-Visualizer.prototype.updatePoints = function() {
+Visualizer.prototype.updatePoints = function(updateContent) {
+	updateContent = typeof(updateContent) === 'boolean' ? updateContent : false;
+	
 	if (this.config.mode === 'html') {
-		this.place.empty();
+		//this.place.empty();
 		
 		for (var item in this.config.points) {
-			$('<div id="' + item + '" class="point" style="position: absolute; top: 0; left: 0; transform: ' + this.__scaleStr(1) + ';"></div>')
-					.appendTo(this.place)
-					.append(typeof(this.config.points[item]['content']) === 'undefined' ? '' : this.config.points[item].content);
+			var p0 = this.config.points[item];
+			if (typeof(p0) === 'object') {
+				var p = this.fitToBoundingBox(p0);
+				
+				var scale = typeof(p['z']) === 'number' ? 1 / p.z : 1;
+				var scaleStr = this.__scaleStr(scale * this.config.scaleFactor);
+				
+				var currentP = this.place.find('#' + item + '.point');
+				if (currentP.length > 0) {
+					if (updateContent) currentP.empty().append(typeof(p['content']) === 'undefined' ? '' : p.content);
+					currentP.attr('style', 'position: absolute; left: ' + p.x + 'px; top: ' + p.y + 'px; transform: ' + scaleStr + ';');
+				}
+				else {
+				$('<div id="' + item + '" class="point" style="position: absolute; left: ' + p.x + 'px; top: ' + p.y + 'px; transform: ' + scaleStr + ';"></div>')
+						.appendTo(this.place)
+						.append(typeof(p['content']) === 'undefined' ? '' : p.content);
+				}
+			}
 		}
 	}
 }
@@ -127,6 +163,12 @@ Visualizer.prototype.updatePoints = function() {
 Visualizer.prototype.addPoints = function(newPoints) {
 	if (Array.isArray(newPoints)) for (var item in newPoints) this.config.points.push(newPoints[item]);
 	else this.config.points.push(newPoints);
+	this.updatePoints();
+}
+
+Visualizer.prototype.removePoint = function(id) {
+	this.config.points[id] = undefined;
+	this.place.find('#' + id).remove();
 	this.updatePoints();
 }
 
@@ -143,6 +185,8 @@ Visualizer.prototype.moveBoundingBox = function(dx, dy, dz) {
 	var moveY = (bb.top - bb.bottom) * dy;
 	var zoomX = (1 + dz) * (bb.right - cx);
 	var zoomY = (1 + dz) * (bb.top - cy);
+	
+	this.config.scaleFactor = this.config.scaleFactor / (1 + dz);
 	
 	bb.left = cx + moveX - zoomX;
 	bb.right = cx + moveX + zoomX;
@@ -228,17 +272,18 @@ Visualizer.prototype.autoFitBoundingBox = function() {
 	}
 	
 	this.setBoundingBox(top, left, bottom, right);
-	this.moveBoundingBox(0, 0, 0.25); // Zoom out once to keep points from hitting borders.
+	if (this.config.mode === 'canvas') this.moveBoundingBox(0, 0, 0.25); // Zoom out once to keep points from hitting borders.
 }
 
 Visualizer.prototype.fitToBoundingBox = function(p) {
-    
+    if (typeof(p) !== 'object') return p;
+	
     var bb = this.config.boundingBox;
 	
 	var dx, dy;
 	var wid = bb.right - bb.left;
 	var hei = bb.bottom - bb.top;
-	if (typeof(p['z']) === 'number') {
+	if (typeof(p.z) === 'number') {
 		
 		dx = (p.x - bb.left - wid / 2) / (p.z * wid) + 0.5;
 		dy = (p.y - bb.top - hei / 2) / (p.z * hei)  + 0.5;
@@ -342,7 +387,7 @@ Visualizer.prototype.drawPoint = function(item, noStroke) {
 	else {
 		
 		var scale = typeof(p['z']) === 'number' ? 1 / p.z : 1;
-		var scaleStr = this.__scaleStr(scale);
+		var scaleStr = this.__scaleStr(scale * this.config.scaleFactor);
 		var visible = p.z > 0.01;
 		var point = this.place.find('.point[id="' + item + '"]');
 		point.attr(
