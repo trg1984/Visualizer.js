@@ -1,7 +1,7 @@
 # Visualizer.js
 Point space visualization component for both canvas and DOM.
 
-[Live demo](http://kulmakerroin.net/visualizer/)
+[Live demo](https://rawgit.com/trg1984/Visualizer.js/master/index.html)
 
 Licence
 -------
